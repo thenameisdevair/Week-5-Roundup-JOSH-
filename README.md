@@ -27,3 +27,5 @@ Contract Address: 0xE54052be207C7DfBe950B67a3E1FCB17Afbc1F7F
 ### School Management System deployment successful
   [Success] Hash: 0x34ae29662c5d8033f4b398ffb756a6972afe55e0bf4df9bcf0acec0d42bf5d48
 Contract Address: 0xdA071fcB66B82aE103CE992A1A7791699f8e86Bd
+
+updated Contract Address : 0xFd111432901dE1b1bf908cdd1DeD82FE73a5d186

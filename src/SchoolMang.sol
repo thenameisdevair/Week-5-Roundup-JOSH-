@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: SEE LICENSE IN LICENSE
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.7;
 
-interface IERC20 {
-    function transferFrom(address from, address to, uint256 amount) external returns (bool);
-    function transfer(address to, uint256 amount) external returns (bool);
-    
-}
+import "./IERC20.sol";
 
 contract SchoolMang {
 
@@ -13,15 +9,11 @@ contract SchoolMang {
     address public owner;
 
     struct Student {
-        uint256  studentId;
+        uint256 studentId;
         string studentName;
         uint16 level;
-
-        //payment;
         uint256 amountPaid;
-        uint256  paidAt;
-
-        
+        uint256 paidAt;
     }
 
     struct Staff {
@@ -31,123 +23,162 @@ contract SchoolMang {
         uint256 salary;
         uint256 amountPaid;
         uint256 paidAt;
+        bool isSuspended;
     }
 
-    mapping (address => Staff) public staffs;
+    mapping(address => Student) public students;
+    mapping(address => Staff) public staffs;
+
+    address[] public studentAddresses;
     address[] public staffAddresses;
-    uint256 public nextStaffId =1;
 
-    mapping (address => Student) students;
-    mapping (uint16 => uint256) private levelFee;
+    uint256 public nextStudentId = 1;
+    uint256 public staff_Id = 1;
 
-    uint256 public nextStudentId =1;
-    address[] private studentAddresses;
-    
+    mapping(uint16 => uint256) public levelFee;
+    mapping(address => mapping(address => uint256)) public allowance;
 
-    
+     
+    event Approval(
+        address indexed owner,
+        address indexed spender,
+        uint256 amount
+    );
 
-     constructor(address _token,
-        uint256 fee100, uint256 fee200, uint256 fee300, uint256 fee400) {
-        
+    event StaffSuspended(address indexed staffAddress);
+    event StaffReinstated(address indexed staffAddress);
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Only owner can call this function");
+        _;
+    }
+
+    constructor(address _token, uint256 fee100, uint256 fee200, uint256 fee300, uint256 fee400) {
         require(_token != address(0), "Token address cannot be zero address");
-
         require(fee100 > 0 && fee200 > 0 && fee300 > 0 && fee400 > 0, "Fee must be greater");
-
+        
         owner = msg.sender;
-        token = IERC20(0x5124778ea2925CA11537D5d63cD4086eEf31c130);
+        token = IERC20(_token);
 
-        levelFee[100]  = fee100;
+        levelFee[100] = fee100;
         levelFee[200] = fee200;
         levelFee[300] = fee300;
         levelFee[400] = fee400;
-        _addStaff("Alice", 0xAb8483F64d9C6d1EcF9b849Ae677dD3315835cb2, 100, 1000);
-        _addStaff("bob", 0x4B20993Bc481177ec7E8f571ceCaE8A9e22C02db, 200, 2000);
-        _addStaff("Charles", 0x78731D3Ca6b7E34aC0F824c42a7cC18A495cabaB, 300, 3000);
-        _addStaff("Deviar", 0x617F2E2fD72FD9D5503197092aC168c91465E7f2, 400, 4000);
     }
 
-
-    
-
-    function registerStudent(string calldata _name, uint16 level) external{
+    function registerStudent(string calldata _name, uint16 level) external {
         require(students[msg.sender].studentId == 0, "Student already registered");
         require(levelFee[level] > 0, "Invalid Level");
-        students[msg.sender] = Student({ 
-        studentId: nextStudentId,
-        studentName: _name,
-        level: level,
-        amountPaid: 0,
-        paidAt: 0
+        
+        students[msg.sender] = Student({
+            studentId: nextStudentId,
+            studentName: _name,
+            level: level,
+            amountPaid: 0,
+            paidAt: 0
         });
 
         studentAddresses.push(msg.sender);
-        nextStudentId ++;
-        
-    
+        nextStudentId++;
     }
-    
+
     function payFees() external {
         require(students[msg.sender].studentId > 0, "Student not registered");
-        require(students[msg.sender].amountPaid == 0, "Already paid"); 
+        require(students[msg.sender].amountPaid == 0, "Already paid");
 
         uint16 level = students[msg.sender].level;
         uint256 fee = levelFee[level];
-
         require(fee > 0, "invalid fee");
 
         require(token.transferFrom(msg.sender, address(this), fee), "Transfer Failed");
 
         students[msg.sender].amountPaid = fee;
         students[msg.sender].paidAt = block.timestamp;
-
     }
 
     function getStudent(address studentWallet) external view returns (Student memory) {
         return students[studentWallet];
-        
     }
 
     function getAllStudents() external view returns (address[] memory) {
         return studentAddresses;
     }
 
-    function _addStaff(
-        string memory _name,
-        address _wallet,
-        uint16 _level,
-        uint256 salary) internal {
-
-        staffs[_wallet] = Staff({
-            staffId: nextStaffId,
+    function addStaff(string calldata _name, uint16 _level, uint256 _salary, address _staff) external onlyOwner {
+        require(_staff != address(0), "Staff address cannot be zero");
+        require(staffs[_staff].staffId == 0, "Staff already added");
+        
+        Staff memory newStaff = Staff({
+            staffId: staff_Id,
             staffName: _name,
             level: _level,
-            salary: salary,
+            salary: _salary,
             amountPaid: 0,
-            paidAt: 0
+            paidAt: 0,
+            isSuspended: false
         });
 
-        staffAddresses.push(_wallet);
-        nextStaffId++;  
+        staffs[_staff] = newStaff;
+        staffAddresses.push(_staff);
+        staff_Id++;
     }
 
-    function payStaff(address staffWallet) external {
-        require(msg.sender == owner, " ONly owner");
-        require(staffs[staffWallet].staffId != 0, "Staff not found");
-        require(staffs[staffWallet].amountPaid == 0, "Already paid");
+    function payStaff(address staffWallet) external onlyOwner {
+        Staff storage staffMember = staffs[staffWallet];
+        require(staffMember.staffId != 0, "Staff not found");
+        require(!staffMember.isSuspended, "Staff is suspended");
+        require(staffMember.amountPaid == 0, "Already paid");
         
-        uint256 salary = staffs[staffWallet].salary;
-
+        uint256 salary = staffMember.salary;
         require(token.transfer(staffWallet, salary), "Payment failed");
 
-        staffs[staffWallet].amountPaid = salary;
-        staffs[staffWallet].paidAt = block.timestamp;
+        staffMember.amountPaid = salary;
+        staffMember.paidAt = block.timestamp;
     }
 
-    function getStaff(address staffWallet) external view  returns (Staff memory) {
-        return staffs[staffWallet];
+    // Function to suspend a staff member; only the contract owner can call this
+    function suspendStaff(address staffWallet) external onlyOwner {
+        Staff storage staffMember = staffs[staffWallet];
+        require(staffMember.staffId != 0, "Staff not found");
+        require(!staffMember.isSuspended, "Staff already suspended");
+        staffMember.isSuspended = true;
+        emit StaffSuspended(staffWallet);
     }
 
-    function getAllStaff() external view returns (address[] memory){
-        return staffAddresses;
+    // Function to reinstate a suspended staff member; only the contract owner can call this
+    function reinstateStaff(address staffWallet) external onlyOwner {
+        Staff storage staffMember = staffs[staffWallet];
+        require(staffMember.staffId != 0, "Staff not found");
+        require(staffMember.isSuspended, "Staff is not suspended");
+        staffMember.isSuspended = false;
+        emit StaffReinstated(staffWallet);
+    }
+
+    function approveOf(address _owner, address _to, uint256 _amount) public returns (bool) {
+        allowance[_owner][_to] = _amount;
+        emit Approval(msg.sender, _to, _amount);
+        return true;
+    }
+
+    function allowanceOf(address _owner, address _to) public view returns (uint256) {
+        return allowance[_owner][_to];
+    }
+
+    // New function to remove a student from the organization
+    function removeStudent(address studentWallet) external onlyOwner {
+        require(students[studentWallet].studentId != 0, "Student not registered");
+        
+        // Remove student from the mapping
+        delete students[studentWallet];
+        
+        // Remove the student's address from the studentAddresses array
+        // Iterating through the array to find the student address
+        for (uint i = 0; i < studentAddresses.length; i++) {
+            if (studentAddresses[i] == studentWallet) {
+                studentAddresses[i] = studentAddresses[studentAddresses.length - 1];
+                studentAddresses.pop();
+                break;
+            }
+        }
     }
 }
